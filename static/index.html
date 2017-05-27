@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>喵耳朵 共享编辑器</title>
+    <style>
+        #editor {
+            display: block;
+            width: 100%;
+            overflow:hidden;
+            height: 600px;
+            margin-top: 0px;
+        }
+        #editor-toolbar {
+            padding: 10px 15px;
+            background: #F5F5F5;
+            margin-bottom: -2px;
+            border: 1px solid #ccc;
+            border-top-left-radius: 4px;
+            border-top-right-radius: 4px
+        }
+        .btn-group {
+            position: relative;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        .editor-toolbar:before {
+            content: " ";
+            display: table;
+        }
+        .editor-toolbar:after {
+            content: " ";
+            display: table;
+            clear: both;
+        }
+        .btn {
+            display: inline-block;
+            margin-bottom: 0;
+            font-weight: 400;
+            text-align: center;
+            vertical-align: middle;
+            cursor: pointer;
+            background-image: none;
+            border: 1px solid transparent;
+            white-space: nowrap;
+            padding: 6px 12px;
+            font-size: 14px;
+            line-height: 1.42857143;
+            border-radius: 4px;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            -o-user-select: none;
+            user-select: none
+        }
+        .btn-default {
+            color: #333;
+            background-color: #fff;
+            border-color: #ccc
+        }
+        .btn:hover {
+            background-color: #ebebeb;
+        }
+        .btn.active {
+            outline: 0;
+            background-color: #ebebeb;
+            box-shadow: inset 0 3px 5px rgba(0, 0, 0, .125);
+            -webkit-box-shadow: inset 0 3px 5px rgba(0, 0, 0, .125);
+        }
+        .select-lang {
+            width: 100px;
+            float: right;
+            font-size: 16px;
+            height: 34px;
+            border-radius: 4px;
+            background: #fff;
+            border: 1px solid #ccc
+        }
+    </style>
+</head>
+<body>
+<header id="editor-toolbar">
+    <div class="btn-group" id="btn-group">
+        <a name="ace/keyboard/emacs" class="btn btn-default">Emacs</a>
+        <a name="" class="btn btn-default active">Normal</a>
+        <a name="ace/keyboard/vim" class="btn btn-default">Vim</a>
+    </div>
+    <!--语言选择，这里只列出的几种语言，如果想添加自己喜欢的语言，可以照着加一条自己用的option-->
+    <select id="lang-selector" name="language" class="select-lang">
+        <option value="ace/mode/c_cpp" selected="">C++</option>
+        <option value="ace/mode/python">Python</option>
+        <option value="ace/mode/javascript">JS</option>
+        <option value="ace/mode/html">HTML</option>
+        <option value="ace/mode/java">Java</option>
+        <option value="ace/mode/php">Php</option>
+    </select>
+</header>
+<pre id="editor"></pre>
+<script src="js/ace/ace.js"></script>
+<script src="js/socket.io.js"></script>
+<script src="js/jquery.js"></script>
+
+<script>
+
+    // 获取url中的参数
+    function getUrlParam(name, def_value){
+        var results = new RegExp('[\?&]' + name + '=([^&#]*)').exec(window.location.href);
+        return (results && results[1]) || (def_value || null);
+    }
+
+    // 编辑器
+    var editor = ace.edit("editor");
+    var editSession = editor.getSession();
+
+    // select语言
+    var select = $("#lang-selector");
+    select.on("change", function () {
+        editor.session.setMode(select.val());
+    });
+
+    editor.session.setMode(select.val());
+    editor.setTheme("ace/theme/monokai");
+
+    // 编辑器选择
+    var btn_group = $("#btn-group");
+    btn_group.on("click", function (event) {
+        btn_group.children().removeClass("active");
+        event.target.className = event.target.className + " active";
+        editor.setKeyboardHandler(event.target.name);
+    });
+
+
+    // 文档的id，默认为demo
+    var docId = getUrlParam("doc", "demo");
+
+    // 文档最后一次更新的时间，当向服务器发送`do`操作的时候，需要传输这个信息，防止编辑的文档已过期
+    var lastTime = -1;
+
+    // 编辑器同步的标识，如果编辑器处在正在更新的状态，则不能进行编辑的操作（无法发送`do`操作）
+    var sync = false;
+
+
+
+    /**
+     * 开始一系列的socket的处理
+     */
+
+    var socket = io(window.location.origin); // 这里直接连接该server，有需要的话，请自行修改
+
+    /*
+     * 当文档的内容发生变化的时候，将变化的内容通过`do`这个事件传输到后台
+     */
+    editor.on("change", function (event) {
+        if (sync) return;
+        event['time'] = lastTime;
+        socket.emit("do", event);
+    });
+
+    /*
+     * 建立连接，连接成功后，加入url中指定的文档
+     */
+    socket.on("connect", function () {
+        socket.emit("join", {
+            docId: docId
+        });
+    });
+
+    /*
+     * 加入文档成功，更新页面，使用`pull`事件拉取最新的页面信息
+     */
+    socket.on("join", function () {
+        socket.emit("pull");
+    });
+
+    /*
+     * 拉取文档成功，更新页面的内容
+     */
+    socket.on("pull", function (data) {
+        sync = true;
+        editSession.setValue(data.doc);
+        lastTime = data.time;
+        sync = false;
+    });
+
+    /*
+     * 所有的向服务器发送的`do`操作都会以广播的形式向各个连接相同文档的客户端发送
+     * 如果`do`操作的发送者是就是本客户端，那么只更新时间即可。
+     * 如果不是本客户端，那么久更新文档的内容和时间
+     * 如果返回的时间为-1，则表示改操作有问题，编辑器会自动`pull`最新的代码
+     */
+    socket.on("do", function (data) {
+        if (data.time < 0) {
+            socket.emit("pull");
+            return;
+        }
+        lastTime = data.time;
+        if (data.socketId === socket.id) return;
+        if (data.error) {
+            socket.emit("pull");
+            return;
+        }
+        sync = true;
+
+        if ("insert" === data.action) {
+            editSession.insert(
+                {
+                    row: data.start.row,
+                    column: data.start.column
+                },
+                data.lines.join('\n'));
+        } else if ("remove" === data.action) {
+            var range = {
+                start: {
+                    row: data.start.row,
+                    column: data.start.column
+                },
+                end: {
+                    row: data.end.row,
+                    column: data.end.column
+                }
+            };
+            editSession.remove(range);
+        }
+        sync = false;
+    });
+
+</script>
+</body>
+</html>
