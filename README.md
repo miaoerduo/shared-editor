@@ -19,5 +19,5 @@ npm install
 # 运行
 node app.js
 
-# 访问 http://localhost:8000/?doc=doc_id 就可以预览效果了。
+# 访问 http://localhost:8080/?doc=doc_id 就可以预览效果了。
 ```
