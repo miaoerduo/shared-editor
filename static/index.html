@@ -153,6 +153,8 @@
     editor.on("change", function (event) {
         if (sync) return;
         event['time'] = lastTime;
+        if (event["action"] === "remove")
+            event["lines"] = [];
         socket.emit("do", event);
     });
 
