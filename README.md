@@ -1,8 +1,6 @@
 # shared-editor
 基于Nodejs的在线共享编辑器。
 
-项目演示：http://editor.miaoerduo.com/?doc=demo
-
 项目博客：http://www.miaoerduo.com/nodejs/小喵的在线共享编辑器.html
 
 功能：打开多个相同doc的网址，所有的操作均会共享。参数doc决定文档的id。
